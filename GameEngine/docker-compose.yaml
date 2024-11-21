@@ -1,0 +1,19 @@
+version: "3.9"
+services:
+  mosquitto:
+    image: eclipse-mosquitto:1.6.2
+    ports: 
+    - "1880:1883"
+  gamemaster:
+    build:
+      context: ./GameMaster
+      dockerfile: dockerfile
+    depends_on:
+    - mosquitto
+    environment: 
+      MQTT_Host: mosquitto
+networks:
+  internal_net:
+    driver: bridge
+  global_net:
+    external: true

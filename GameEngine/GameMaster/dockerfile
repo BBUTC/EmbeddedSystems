@@ -1,0 +1,9 @@
+FROM python:3.9
+
+RUN mkdir /home/Game
+
+RUN pip install paho-mqtt
+
+COPY gameMaster.py /home/Game/gameMaster.py
+
+CMD python3 -u /home/Game/gameMaster.py
