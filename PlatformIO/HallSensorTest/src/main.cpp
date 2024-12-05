@@ -41,6 +41,20 @@ void reconnect() {
 }
 
 void callback(char* topic, byte* payload, unsigned int length){
+  payload[length] = '\0';
+  if(strcmp((char*) payload, "dice") == 0){
+    int dice_roll = random(1,7);
+    client.publish("esp01/meeple0/dice/result", String(dice_roll).c_str());
+  }
+  else if (strcmp((char*) payload, "led low") == 0)
+  {
+    digitalWrite(greenLedPin, LOW);
+  }
+  else if (strcmp((char*) payload, "led high") == 0)
+  {
+    digitalWrite(greenLedPin, HIGH);
+  }
+  
   int dice_roll = random(1,7);
   client.publish("esp01/meeple0/dice/result", String(dice_roll).c_str());
 }
@@ -49,10 +63,23 @@ void setup() {
   // put your setup code here, to run once:
   pinMode(hallPin, INPUT);
   pinMode(greenLedPin, OUTPUT);
+  digitalWrite(greenLedPin, LOW);
   setup_wifi();
   client.setServer(mqtt_server, 1880);
   client.setCallback(callback);
   reconnect();
+  digitalWrite(greenLedPin, HIGH);
+  delay(500);
+  digitalWrite(greenLedPin, LOW);
+  delay(500);
+  digitalWrite(greenLedPin, HIGH);
+  delay(500);
+  digitalWrite(greenLedPin, LOW);
+  delay(500);
+  digitalWrite(greenLedPin, HIGH);
+  delay(500);
+  digitalWrite(greenLedPin, LOW);
+  delay(500);
 }
 
 
@@ -80,11 +107,11 @@ void myFunction() {
     if(lastHallValue == HIGH){
       client.publish("esp01/meeple0/hall", "Movement detected");
     }
-    digitalWrite(greenLedPin, HIGH);
+    // digitalWrite(greenLedPin, HIGH);
   }
-  else{
-    digitalWrite(greenLedPin, LOW);
-  }
+  // else{
+  //   digitalWrite(greenLedPin, LOW);
+  // }
   
   lastHallValue = digitalRead(hallPin);
 }
