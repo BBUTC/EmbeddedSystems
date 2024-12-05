@@ -77,6 +77,13 @@ void callback(char* topic, byte* message, unsigned int length) {
     lcd.print(stMessage2);
   }
 
+  if (String(topic) == "board/request/rps") {
+    String rps_result = "0,0";
+    rps_result[0] = String(random(1,4))[0];
+    rps_result[2] = String(random(1,4))[0];
+    client.publish("board/result/rps", rps_result.c_str());
+  }
+
   // moveCounter += 1;
   // lcd.clear();
   // lcd.setCursor(0, 0);
@@ -111,7 +118,7 @@ void mqtt_task(void *pvParameter){
       reconnect();
     }
     client.loop();
-    vTaskDelay(300);
+    vTaskDelay(100);
     // client.publish("esp/test", "This is a test mesage");
     // Serial.println("A message has been sent");
   }
