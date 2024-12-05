@@ -74,10 +74,87 @@ else :
 
 port = 1883
 
+
+
+class Meeple:
+    def __init__(self, name, position):
+        self.name = name
+        self.position = position
+        self.initial_position = position
+
+    def move(self, steps):
+        self.position += steps
+
+    def reset_position(self):
+        self.position = self.initial_position
+
+def roll_dice():
+    return random.randint(1, 6)
+    #get the dice roll from the dice
+    
+def rock_paper_scissors():
+    return random.randint(1, 3)
+    #get the rock paper scissors result from the meeples
+
+def battle(name1, name2, position):
+    print(f"{name1} and {name2} encountered each other at position {position}")
+    result1 = rock_paper_scissors()
+    result2 = rock_paper_scissors()
+
+    while result1 == result2:
+        print("It's a tie! Battle again.")
+        result1 = rock_paper_scissors()
+        result2 = rock_paper_scissors()
+    
+    if (result1 == 1 and result2 == 3) or (result1 == 2 and result2 == 1) or (result1 == 3 and result2 == 2):
+        print(f"{name1} wins! {name2} goes back to the initial position.")
+        return name1
+    else:
+        print(f"{name2} wins! {name1} goes back to the initial position.")
+        return name2
+
+def play_game():
+    meeple1 = Meeple("Meeple1", 0)
+    meeple2 = Meeple("Meeple2", 10)
+
+    # Randomly decide which meeple starts first
+    current_turn = meeple1 if random.choice([True, False]) else meeple2
+
+    while meeple1.position < meeple2.position:
+        if current_turn == meeple1:
+            steps = roll_dice()
+            if(meeple1.position + steps >= meeple2.position): 
+                if(battle(meeple1.name, meeple2.name, meeple2.position) == meeple1.name):
+                    meeple2.reset_position()
+                    meeple1.move(steps)
+                else:
+                    meeple1.reset_position()
+            else:
+                meeple1.move(roll_dice())
+            
+            current_turn = meeple2
+        else:
+            steps = roll_dice()
+            if(meeple2.position - steps <= meeple1.position): 
+                if(battle(meeple1.name, meeple2.name, meeple2.position) == meeple1.name):
+                    meeple2.reset_position()
+                else:
+                    meeple1.reset_position()
+                    meeple2.move(-steps)
+            else:
+                meeple2.move(-roll_dice())
+            current_turn = meeple1
+
+        print(f"{meeple1.name} is at position {meeple1.position}")
+        print(f"{meeple2.name} is at position {meeple2.position}")
+        
 if __name__ == '__main__':
     print("Host : ", broker)
     print("Port : ", port)
     client = connect_mqtt()
     subscribe(client)
 
-    client.loop_forever()
+    client.loop_start()
+    
+    # This is the main function 
+    play_game()
