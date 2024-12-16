@@ -5,14 +5,16 @@ import paho
 from paho.mqtt import client as mqtt_client
 import os
 
-received_roll = False
-dice_roll = None
-rps_results = [0, 0]
-received_rps = False
-received_movement = False
+class GameState:
+    received_roll = False
+    dice_roll = None
+    rps_results = [0, 0]
+    received_rps = False
+    received_movement = [False, 0]
+    client = None
 
 def line_break(message):
-    if message < 16:
+    if len(message) < 16:
         for i in range(len(message), 17):
             message += " "
     return message
@@ -71,32 +73,31 @@ def publish(client, msg, topic):
         print(f"Failed to send message to topic {topic}")
         
 def print_to_lcd(message):
-    publish(client, message, "Board/Output") #Change the topic to the correct topic
+    publish(GameState.client, message, "Board/Output") #Change the topic to the correct topic
     #print the message to the LCD screen
 
 def subscribe(client: mqtt_client):
     def on_message(client, userdata, msg):
-        #print(f"Received `{msg.payload.decode()}` from `{msg.topic}` topic")
+        print(f"Received `{msg.payload.decode()}` from `{msg.topic}` topic")
         
-        global received_roll, dice_roll
         msgTopics = msg.topic.split("/")
-        if msg.topic[-2:] == ["dice","result"]: # Check if the topic is the result topic
-            dice_roll = int(msg.payload.decode())  # Decode the received payload
-            print(f"Received `{dice_roll}` from `{msg.topic}` topic")
-            received_roll = True  # Update the flag
-        elif msg.topic[-2:] == ["rps","result"]:
-            rops = msg.payload.decode().split(".")  # Decode the received payload
-            rps_results = [int(x) for x in rops]
-            received_roll = True  # Update the flag
-        elif msg.topic[-1] == ["hall"]:
-            received_movement = True  # Update the flag
+        # print("Debug : ",msgTopics)
 
-    topics = [("esp01/meeple0/dice/result", 0),
-              ("esp01/meeple1/dice/result", 0),
-              ("esp01/meeple0/hall", 0),
-              ("esp01/meeple1/hall", 0),
-              ("board/result/rps", 0)]
-    client.subscribe(topics)
+        if msgTopics[-1] == "dice": # Check if the topic is the result topic
+            GameState.dice_roll = [int(msg.payload.decode()), int(msgTopics[1][-1])] # Decode the received payload
+            print(f"Received `{GameState.dice_roll[0]}` from `{msg.topic}` topic")
+            GameState.received_roll = True  # Update the flag
+        elif msgTopics[-1] == "rps":
+            rops = msg.payload.decode().split(",")  # Decode the received payload
+            GameState.rps_results = [int(x) for x in rops]
+            GameState.received_rps = True  # Update the flag
+        elif msgTopics[-1] == "hall":
+            GameState.received_movement = [True, int(msgTopics[1][-1])]  # Update the flag
+
+    # topics = ["esp01/meeple0/result/dice", "esp01/meeple1/result/dice", "esp01/meeple0/hall", "esp01/meeple1/hall", 
+    #           "board/result/rps"]
+    client.subscribe("esp01/+/result/#")
+    client.subscribe("board/result/#")
     client.on_message = on_message
 
 client_id = ""
@@ -108,7 +109,6 @@ else :
 port = 1883
 
 class Meeple:
-    print_to_lcd("Meeple 1 and Meeple 2 are ready to play!") 
     def __init__(self, name, short_name, position):
         self.name = name
         self.short_name = short_name
@@ -121,128 +121,155 @@ class Meeple:
 
     def reset_position(self, meepleNumber):
         print_to_lcd(f"Reset p{meepleNumber}") 
-        while not received_movement:
-            time.sleep(1)
-        received_movement = False
+        wait_for_move(meepleNumber)
         self.position = self.initial_position
+
+def wait_for_move(meeple_number):
+    correct_meeple = False
+    while not correct_meeple:
+        while not GameState.received_movement[0]:
+                time.sleep(1)
+        if GameState.received_movement[1] == meeple_number-1:
+            correct_meeple=True
+        GameState.received_movement[0] = False
+    return True
 
 def roll_dice(meepleNumber):
     
-    global received_roll, dice_roll
-    print("Requesting dice roll...")
-    publish(client, "Roll the dice!", "roll/meeple"+ meepleNumber +"/dice/request")  # Send the request
 
-    # Wait for the response
-    while not received_roll:
-        wait_time = 0.1
-        time.sleep(wait_time)
+    print("Requesting dice roll...")
+    publish(GameState.client, "Roll the dice!", f"esp01/meeple{meepleNumber-1}/request/dice")  # Send the request
+    correct_meeple = False
+
+    while not correct_meeple:
+        # Wait for the response
+        while not GameState.received_roll:
+            wait_time = 0.1
+            time.sleep(wait_time)
+
+        if GameState.dice_roll[1] == meepleNumber-1:
+            correct_meeple=True
+        GameState.received_roll = False
+        
 
     # Process the result
-    print(f"Dice roll result: {dice_roll}")
+    print(f"Dice roll result: {GameState.dice_roll}")
     
     # Reset the flag for the next roll
-    received_roll = False
-    return dice_roll
+    return int(GameState.dice_roll[0])
     
     #get the dice roll from the dice
     
 def rock_paper_scissors():
     
+    publish(GameState.client, "Play rps", "board/request/rps")
     # Wait for the response
-    while not received_rps:
+    while not GameState.received_rps:
         wait_time = 0.1
         time.sleep(wait_time)
         
-    received_rps = False
+    GameState.received_rps = False
+    return GameState.rps_results
     #get the rock paper scissors result from the meeples
 
 def battle(name1, name2, position):
     print_to_lcd(f"{name1} and {name2} encountered each other at position {position}")
-    result1,result2 = rps_results
+    result1,result2 = rock_paper_scissors()
 
     while result1 == result2:
         print_to_lcd("It's a tie! Battle again.")
-        rock_paper_scissors()
-        result1,result2 = rps_results
-    
+        result1,result2 = rock_paper_scissors()
+    # 1=rock 2=paper, 3=scissors
     if (result1 == 1 and result2 == 3) or (result1 == 2 and result2 == 1) or (result1 == 3 and result2 == 2):
         print_to_lcd(f"{name1} wins! {name2} goes back to the initial position.")
+        time.sleep(1)
+
         return name1
     else:
         print_to_lcd(f"{name2} wins! {name1} goes back to the initial position.")
+        time.sleep(1)
+
         return name2
 
 def play_game():
-    meeple1 = Meeple("Meeple1", 0)
-    meeple2 = Meeple("Meeple2", 10)
+    meeple1 = Meeple("Meeple1", "p1", 0)
+    meeple2 = Meeple("Meeple2", "p2", 10)
     moves_counter = 0
 
     # Randomly decide which meeple starts first
     current_turn = meeple1 if random.choice([True, False]) else meeple2
-    print_to_lcd(f"{current_turn.name} turn")
-    time.sleep(1)
-    print_to_lcd(f"{meeple1.short_name} at:{meeple1.position} & {meeple2.short_name} at:{meeple2.position}")
-
+    
     while meeple1.position < meeple2.position:
         print_to_lcd(f"{current_turn.short_name} turn")
         time.sleep(1)
         
         if current_turn == meeple1:
-            publish(client, "led high", "esp01/meeple0/request/led")
-            publish(client, "led low", "esp01/meeple1/request/led")
+            publish(GameState.client, "led high", "esp01/meeple0/request/led")
+            publish(GameState.client, "led low", "esp01/meeple1/request/led")
             print_to_lcd(f"{current_turn.name} is rolling the dice...")
             time.sleep(1)
             moves_counter = roll_dice(1)
             
             while(moves_counter > 0):
-                print_to_lcd(line_break(f"{meeple1.short_name} at:{meeple1.position} & {meeple2.short_name} at:{meeple2.position}") +
+                print("DEBUG : Entered movement while")
+                print_to_lcd(line_break(f"{meeple1.short_name}:{meeple1.position} & {meeple2.short_name}:{meeple2.position}") +
                          f"{current_turn.short_name} turn & moves:{moves_counter}")
-                while not received_movement:
-                    time.sleep(1)
-                received_movement = False
+                wait_for_move(1)
                 meeple1.move(1, 1)
                 if(meeple1.position == meeple2.position):
-                    if(battle(meeple1.name, meeple2.name, meeple2.position) == meeple1.name):
+                    if(battle(meeple1.short_name, meeple2.short_name, meeple2.position) == meeple1.short_name):
+                        if(meeple1.position == 10):
+                            return 1
                         meeple2.reset_position(2)
+                        print_to_lcd(line_break(f"{meeple1.short_name}:{meeple1.position} & {meeple2.short_name}:{meeple2.position}") +
+                         f"{current_turn.short_name} turn & moves:{moves_counter}")
                     else:
                         meeple1.reset_position(1)
                         moves_counter = 0
-                moves_counter -= 1
+                if moves_counter != 0:
+                    moves_counter -= 1
                 time.sleep(1)
             
             current_turn = meeple2
         else:
-            publish(client, "led high", "esp01/meeple1/request/led")
-            publish(client, "led low", "esp01/meeple0/request/led")
+            publish(GameState.client, "led high", "esp01/meeple1/request/led")
+            publish(GameState.client, "led low", "esp01/meeple0/request/led")
             print_to_lcd(f"{current_turn.name} is rolling the dice...")
             time.sleep(1)
-            steps = roll_dice(2)
+            moves_counter = roll_dice(2)
             
             while(moves_counter > 0):
-                print_to_lcd(line_break(f"{meeple1.short_name} at:{meeple1.position} & {meeple2.short_name} at:{meeple2.position}") +
+                print_to_lcd(line_break(f"{meeple1.short_name}:{meeple1.position} & {meeple2.short_name}:{meeple2.position}") +
                          f"{current_turn.short_name} turn & moves:{moves_counter}")
-                while not received_movement:
-                    time.sleep(1)
-                received_movement = False
-                meeple2.move(1, 2)
+                wait_for_move(2)
+                meeple2.move(-1, 2)
                 if(meeple1.position == meeple2.position):
-                    if(battle(meeple1.name, meeple2.name, meeple2.position) == meeple2.name):
+                    if(battle(meeple1.short_name, meeple2.short_name, meeple2.position) == meeple2.short_name):
+                        if(meeple2.position == 0):
+                            return 2
                         meeple1.reset_position(1)
+                        print_to_lcd(line_break(f"{meeple1.short_name}:{meeple1.position} & {meeple2.short_name}:{meeple2.position}") +
+                         f"{current_turn.short_name} turn & moves:{moves_counter}")
                     else:
                         meeple2.reset_position(2)
                         moves_counter = 0
-                moves_counter -= 1
+                if moves_counter != 0:
+                    moves_counter -= 1
                 time.sleep(1)
             current_turn = meeple1
         
 if __name__ == '__main__':
     print("Host : ", broker)
     print("Port : ", port)
-    client = connect_mqtt()
-    subscribe(client)
+    GameState.client = connect_mqtt()
+    subscribe(GameState.client)
 
-    client.loop_start()
+    GameState.client.loop_start()
+
+    playing = True
 
     # This is the main function
+    while playing == True:
+        winner = play_game()
+        print_to_lcd("p"+str(winner)+" won the game!")
 
-    play_game()
