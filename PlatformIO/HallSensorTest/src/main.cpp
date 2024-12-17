@@ -32,7 +32,7 @@ void reconnect() {
   while (!client.connected()) {
     if (client.connect("ESP01")) {
       // Subscribe to a topic
-      client.subscribe("esp01/meeple0/dice/request");
+      client.subscribe("esp01/meeple0/request");
     } else {
       delay(500);
     }
@@ -44,7 +44,7 @@ void callback(char* topic, byte* payload, unsigned int length){
   payload[length] = '\0';
   if(strcmp((char*) payload, "dice") == 0){
     int dice_roll = random(1,7);
-    client.publish("esp01/meeple0/dice/result", String(dice_roll).c_str());
+    client.publish("esp01/meeple0/result/dice", String(dice_roll).c_str());
   }
   else if (strcmp((char*) payload, "led low") == 0)
   {
@@ -55,8 +55,8 @@ void callback(char* topic, byte* payload, unsigned int length){
     digitalWrite(greenLedPin, HIGH);
   }
   
-  int dice_roll = random(1,7);
-  client.publish("esp01/meeple0/dice/result", String(dice_roll).c_str());
+  // int dice_roll = random(1,7);
+  // client.publish("esp01/meeple0/result/dice", String(dice_roll).c_str());
 }
 
 void setup() {
@@ -105,7 +105,7 @@ void myFunction() {
   int hallValue = digitalRead(hallPin);
   if(hallValue == LOW){
     if(lastHallValue == HIGH){
-      client.publish("esp01/meeple0/hall", "Movement detected");
+      client.publish("esp01/meeple0/result/hall", "Movement detected");
     }
     // digitalWrite(greenLedPin, HIGH);
   }

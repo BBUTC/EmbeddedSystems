@@ -5,15 +5,6 @@
 
 LiquidCrystal_I2C lcd(0x27, 16, 2); // I2C address 0x27, 16 column and 2 rows
 
-/* Multitasking Example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -22,7 +13,8 @@ LiquidCrystal_I2C lcd(0x27, 16, 2); // I2C address 0x27, 16 column and 2 rows
 #include "PubSubClient.h"
 
 int I2C_SDA = 32; 
-int I2C_SCL = 33; 
+int I2C_SCL = 33;
+int buttonPin = 25;
 const char* ssid = "ben partage";
 const char* wifi_password = "jaifaittopzero";
 xQueueHandle screenQueue;
@@ -33,24 +25,9 @@ int moveCounter = 0;
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-TaskHandle_t MessageHandle = NULL;
+TaskHandle_t buttonHandle = NULL;
 TaskHandle_t mqttHandle = NULL;
 
-// void blink_message(void *pvParameter)
-// {
-//   int screenState = 0;
-//   lcd.clear();              // clear display
-//   lcd.setCursor(0, 0);      // move cursor to   (0, 0)
-//   lcd.print("Roei & Ben");       // print message at (0, 0)
-//   while(1) {
-//     if(xQueueReceive(screenQueue, &screenState, (TickType_t) 10 /portTICK_PERIOD_MS)){
-//       lcd.clear();
-//       lcd.print("Connected");       // print message at (0, 0)
-//       screenState = 0;
-//     }
-//     vTaskDelay(1000);
-//   }
-// }
 
 void callback(char* topic, byte* message, unsigned int length) {
   Serial.print("Message arrived on topic: ");
@@ -84,10 +61,6 @@ void callback(char* topic, byte* message, unsigned int length) {
     client.publish("board/result/rps", rps_result.c_str());
   }
 
-  // moveCounter += 1;
-  // lcd.clear();
-  // lcd.setCursor(0, 0);
-  // lcd.print(moveCounter);
 }
 
 void setup_wifi(){
@@ -110,7 +83,17 @@ void reconnect(){
   client.subscribe("board/request/#");
 }
 
-
+void button_detection(void *pvParameter){
+  bool precedentRead = false;
+  while (1)
+  {
+    if(digitalRead(buttonPin) == 1 && !precedentRead){
+      client.publish("board/result/button", "activated");
+      precedentRead = true;
+    }
+    else if(digitalRead(buttonPin) == 0) precedentRead = false;
+  }
+}
 
 void mqtt_task(void *pvParameter){
   while(1){
@@ -119,8 +102,6 @@ void mqtt_task(void *pvParameter){
     }
     client.loop();
     vTaskDelay(100);
-    // client.publish("esp/test", "This is a test mesage");
-    // Serial.println("A message has been sent");
   }
 }
 
@@ -131,6 +112,7 @@ void setup()
   Serial.println("Serial Okk");
 
   Wire.begin(I2C_SDA, I2C_SCL);
+  pinMode(buttonPin, INPUT_PULLDOWN);
   lcd.init(); // initialize the lcd
   lcd.backlight();
   lcd.clear();
@@ -145,14 +127,6 @@ void setup()
   client.setCallback(callback);
   client.publish("board/healthcheck", "OK");
 
-  // xTaskCreate(
-  //   &blink_message, // task function
-  //   "blinkmessage", // task name
-  //   2048, // stack size in words
-  //   NULL, // pointer to parameters
-  //   1, // priority
-  //   &MessageHandle); // out pointer to task handle
-
   xTaskCreate(
     &mqtt_task,
     "mqtttask",
@@ -160,6 +134,15 @@ void setup()
     NULL,
     1,
     &mqttHandle
+  );
+
+   xTaskCreate(
+    &button_detection,
+    "buttondetection",
+    2048,
+    NULL,
+    1,
+    &buttonHandle
   );
 }
 
