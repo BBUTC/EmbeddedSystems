@@ -5,6 +5,7 @@ import paho
 from paho.mqtt import client as mqtt_client
 import os
 
+#Stores all the global variables
 class GameState:
     received_roll = False
     dice_roll = None
@@ -14,16 +15,16 @@ class GameState:
     received_button = False
     client = None
 
+#Adds white spaces to a string to fill in a line on the LCD screen
 def line_break(message):
     if len(message) < 16:
         for i in range(len(message), 16):
             message += " "
     return message
 
+#Connects to the mqtt broker
 def connect_mqtt():
     def on_connect(client, userdata, flags, rc):
-    # For paho-mqtt 2.0.0, you need to add the properties parameter.
-    # def on_connect(client, userdata, flags, rc, properties):
         if rc == 0:
             print("Connected to MQTT Broker!")
         else:
@@ -31,10 +32,6 @@ def connect_mqtt():
     # Set Connecting Client ID
     client = mqtt_client.Client(client_id=client_id)
 
-    # For paho-mqtt 2.0.0, you need to set callback_api_version.
-    # client = mqtt_client.Client(client_id=client_id, callback_api_version=mqtt_client.CallbackAPIVersion.VERSION2)
-
-    # client.username_pw_set(username, password)
     client.on_connect = on_connect
     client.connect(broker, port)
     return client
@@ -64,6 +61,7 @@ def on_disconnect(client, userdata, rc):
     print("Reconnect failed after %s attempts. Exiting...", reconnect_count)
     client.loop_stop()
 
+#Publish function that adds logging
 def publish(client, msg, topic):
     result = client.publish(topic, msg)
     # result: [0, 1]
@@ -72,33 +70,38 @@ def publish(client, msg, topic):
         print(f"Send `{msg}` to topic `{topic}`")
     else:
         print(f"Failed to send message to topic {topic}")
-        
+
+#Sends a message to the ESP32 screen
 def print_to_lcd(message):
     publish(GameState.client, message, "board/request/display") 
     #print the message to the LCD screen
 
+#Subscribe to the devices topics
 def subscribe(client: mqtt_client):
+    #Callback function : reads the message and topic and acts accordingly
     def on_message(client, userdata, msg):
         print(f"Received `{msg.payload.decode()}` from `{msg.topic}` topic")
         
         msgTopics = msg.topic.split("/")
-        # print("Debug : ",msgTopics)
 
+        #Dice roll
         if msgTopics[-1] == "dice": # Check if the topic is the result topic
             GameState.dice_roll = [int(msg.payload.decode()), int(msgTopics[1][-1])] # Decode the received payload
             print(f"Received `{GameState.dice_roll[0]}` from `{msg.topic}` topic")
             GameState.received_roll = True  # Update the flag
+        #Rock paper Scissor request
         elif msgTopics[-1] == "rps":
             rops = msg.payload.decode().split(",")  # Decode the received payload
             GameState.rps_results = [int(x) for x in rops]
             GameState.received_rps = True  # Update the flag
+        #Hall sensor detection
         elif msgTopics[-1] == "hall":
             GameState.received_movement = [True, int(msgTopics[1][-1])]  # Update the flag
+        #Button pressed detection
         elif msgTopics[-1] == "button":
             GameState.received_button = True  # Update the flag
 
-    # topics = ["esp01/meeple0/result/dice", "esp01/meeple1/result/dice", "esp01/meeple0/hall", "esp01/meeple1/hall", 
-    #           "board/result/rps"]
+
     client.subscribe("esp01/+/result/#")
     client.subscribe("board/result/#")
     client.on_message = on_message
@@ -111,6 +114,7 @@ else :
 
 port = 1883
 
+#Meeple class that simplify meeple interractions
 class Meeple:
     def __init__(self, name, short_name, position):
         self.name = name
@@ -127,12 +131,14 @@ class Meeple:
         wait_for_move(meepleNumber)
         self.position = self.initial_position
 
+#Wait for a button press
 def wait_for_button():
     while not GameState.received_button:
         time.sleep(1)
     GameState.received_button = False
     return True
 
+#Wait for a movement from a meeple
 def wait_for_move(meeple_number):
     correct_meeple = False
     while not correct_meeple:
@@ -143,9 +149,8 @@ def wait_for_move(meeple_number):
         GameState.received_movement[0] = False
     return True
 
+#Asks a meeple to roll the dice
 def roll_dice(meepleNumber):
-    
-
     print("Requesting dice roll...")
     publish(GameState.client, "dice", f"esp01/meeple{meepleNumber-1}/request")  # Send the request
     correct_meeple = False
@@ -160,15 +165,11 @@ def roll_dice(meepleNumber):
             correct_meeple=True
         GameState.received_roll = False
         
-
     # Process the result
     print(f"Dice roll result: {GameState.dice_roll}")
-    
-    # Reset the flag for the next roll
     return int(GameState.dice_roll[0])
-    
-    #get the dice roll from the dice
-    
+        
+#Requests rock paper scissor numbers
 def rock_paper_scissors():
     
     publish(GameState.client, "Play rps", "board/request/rps")
@@ -181,6 +182,7 @@ def rock_paper_scissors():
     return GameState.rps_results
     #get the rock paper scissors result from the meeples
 
+#Runs a rock paper scissor battle between the players
 def battle(name1, name2, position):
     print_to_lcd(f"{name1} and {name2} encountered each other at position {position}")
     result1,result2 = rock_paper_scissors()
@@ -200,6 +202,7 @@ def battle(name1, name2, position):
 
         return name2
 
+#Main game loop
 def play_game():
     meeple1 = Meeple("Meeple1", "p1", 0)
     meeple2 = Meeple("Meeple2", "p2", 10)
@@ -212,6 +215,7 @@ def play_game():
         print_to_lcd(f"{current_turn.short_name} turn")
         time.sleep(1)
         
+        #Meeple 1 turn
         if current_turn == meeple1:
             publish(GameState.client, "led high", "esp01/meeple0/request")
             publish(GameState.client, "led low", "esp01/meeple1/request")
@@ -219,12 +223,14 @@ def play_game():
             time.sleep(1)
             moves_counter = roll_dice(1)
             
+            #While there are still movements left
             while(moves_counter > 0):
                 print("DEBUG : Entered movement while")
                 print_to_lcd(line_break(f"{meeple1.short_name}:{meeple1.position} & {meeple2.short_name}:{meeple2.position}") +
                          f"{current_turn.short_name} turn & m:{moves_counter}")
                 wait_for_move(1)
                 meeple1.move(1, 1)
+                #If both players meet : battle
                 if(meeple1.position == meeple2.position):
                     if(battle(meeple1.short_name, meeple2.short_name, meeple2.position) == meeple1.short_name):
                         if(meeple1.position == 10):
@@ -240,6 +246,7 @@ def play_game():
                 time.sleep(1)
             
             current_turn = meeple2
+        #Meeple 2 turn
         else:
             publish(GameState.client, "led high", "esp01/meeple1/request")
             publish(GameState.client, "led low", "esp01/meeple0/request")
@@ -247,11 +254,13 @@ def play_game():
             time.sleep(1)
             moves_counter = roll_dice(2)
             
+            #While there are still movements left
             while(moves_counter > 0):
                 print_to_lcd(line_break(f"{meeple1.short_name}:{meeple1.position} & {meeple2.short_name}:{meeple2.position}") +
                          f"{current_turn.short_name} turn & m:{moves_counter}")
                 wait_for_move(2)
                 meeple2.move(-1, 2)
+                #If both players meet : battle
                 if(meeple1.position == meeple2.position):
                     if(battle(meeple1.short_name, meeple2.short_name, meeple2.position) == meeple2.short_name):
                         if(meeple2.position == 0):
@@ -270,6 +279,7 @@ def play_game():
 if __name__ == '__main__':
     print("Host : ", broker)
     print("Port : ", port)
+    #Connects to the MQTT
     GameState.client = connect_mqtt()
     subscribe(GameState.client)
 
@@ -279,8 +289,10 @@ if __name__ == '__main__':
 
     # This is the main function
     while playing == True:
+        #Wait for the button to be pressed to start the game
         print_to_lcd("Press to start")
         wait_for_button()
+        #Launches the game
         winner = play_game()
         print_to_lcd("p"+str(winner)+" won the game!")
         time.sleep(10)

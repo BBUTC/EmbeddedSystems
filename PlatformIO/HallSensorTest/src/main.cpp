@@ -18,6 +18,7 @@ int lastHallValue = 0;
 
 WiFiClient espClient;
 void setup_wifi() {
+  //Setup for the wifi
   delay(10);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -29,21 +30,24 @@ void setup_wifi() {
 PubSubClient client(mqtt_server, 1880, espClient);
 
 void reconnect() {
+  //Connects back to the MQTT broker
   while (!client.connected()) {
     if (client.connect("ESP01")) {
       // Subscribe to a topic
+      // Change the meeple number to 1 for the second player
       client.subscribe("esp01/meeple0/request");
     } else {
       delay(500);
     }
   }
-  // client.subscribe("esp01/meeple0/dice/request", 0);
 }
 
 void callback(char* topic, byte* payload, unsigned int length){
+  //Reads the message and acts accordingly (LED on/off or dice roll)
   payload[length] = '\0';
   if(strcmp((char*) payload, "dice") == 0){
     int dice_roll = random(1,7);
+    // Change the meeple number to 1 for the second player
     client.publish("esp01/meeple0/result/dice", String(dice_roll).c_str());
   }
   else if (strcmp((char*) payload, "led low") == 0)
@@ -55,19 +59,22 @@ void callback(char* topic, byte* payload, unsigned int length){
     digitalWrite(greenLedPin, HIGH);
   }
   
-  // int dice_roll = random(1,7);
-  // client.publish("esp01/meeple0/result/dice", String(dice_roll).c_str());
 }
 
 void setup() {
-  // put your setup code here, to run once:
+  //PIN Modes
   pinMode(hallPin, INPUT);
   pinMode(greenLedPin, OUTPUT);
+
   digitalWrite(greenLedPin, LOW);
   setup_wifi();
+
+  //Sets the mqtt broker and callback function
   client.setServer(mqtt_server, 1880);
   client.setCallback(callback);
+  //Connects to the MQTT Broker
   reconnect();
+  //Blinks to indicate successful connection
   digitalWrite(greenLedPin, HIGH);
   delay(500);
   digitalWrite(greenLedPin, LOW);
@@ -85,33 +92,22 @@ void setup() {
 
 
 void loop() {
-  // client.publish("Meeple", "Connected, starting loop");
-  // put your main code here, to run repeatedly:
-  // if (!client.connected()) {
-  // reconnect();
-  // }
-  /* code */
+
   myFunction();
-  // digitalWrite(greenLedPin, HIGH);
-  // delay(1000);
-  // digitalWrite(greenLedPin, LOW);
-  // delay(1000);
   client.loop();
 
 }
 
 // put function definitions here:
 void myFunction() {
+  //Detects magnets with the hall sensor
   int hallValue = digitalRead(hallPin);
   if(hallValue == LOW){
+    //Only sends a message if it detects a change
     if(lastHallValue == HIGH){
+      // Change the meeple number to 1 for the second player
       client.publish("esp01/meeple0/result/hall", "Movement detected");
     }
-    // digitalWrite(greenLedPin, HIGH);
   }
-  // else{
-  //   digitalWrite(greenLedPin, LOW);
-  // }
-  
   lastHallValue = digitalRead(hallPin);
 }

@@ -30,6 +30,7 @@ TaskHandle_t mqttHandle = NULL;
 
 
 void callback(char* topic, byte* message, unsigned int length) {
+  //Reads the received message and its topic to act accordingly
   Serial.print("Message arrived on topic: ");
   Serial.print(topic);
   Serial.print(". Message: ");
@@ -42,6 +43,7 @@ void callback(char* topic, byte* message, unsigned int length) {
   }
   Serial.println();
 
+  //Screen display request
   if (String(topic) == "board/request/display") {
     if(length >16){
       stMessage2 = stMessage.substring(16);
@@ -54,6 +56,7 @@ void callback(char* topic, byte* message, unsigned int length) {
     lcd.print(stMessage2);
   }
 
+  //Rock Paper Scissor numbers request
   if (String(topic) == "board/request/rps") {
     String rps_result = "0,0";
     rps_result[0] = String(random(1,4))[0];
@@ -64,6 +67,7 @@ void callback(char* topic, byte* message, unsigned int length) {
 }
 
 void setup_wifi(){
+  //Setup for the Wifi
   int wifi_check = 1;
   WiFi.begin(ssid, wifi_password);
   while (WiFi.status() != WL_CONNECTED) {
@@ -76,6 +80,7 @@ void setup_wifi(){
 }
 
 void reconnect(){
+  //Connects to the mqtt broker
   while(!client.connected()){
     client.connect("ESP32");
     vTaskDelay(1000);
@@ -84,6 +89,7 @@ void reconnect(){
 }
 
 void button_detection(void *pvParameter){
+  //Detect if the button is pressed, sends a message if it is
   bool precedentRead = false;
   while (1)
   {
@@ -96,10 +102,12 @@ void button_detection(void *pvParameter){
 }
 
 void mqtt_task(void *pvParameter){
+  // Reconnects if the connection is lost
   while(1){
     if(!client.connected()){
       reconnect();
     }
+    //Ensures that the mqtt loop is called regularly
     client.loop();
     vTaskDelay(100);
   }
@@ -111,6 +119,7 @@ void setup()
   Serial.begin(115200);
   Serial.println("Serial Okk");
 
+  //Sets the I2C protocol for the screen
   Wire.begin(I2C_SDA, I2C_SCL);
   pinMode(buttonPin, INPUT_PULLDOWN);
   lcd.init(); // initialize the lcd
@@ -123,10 +132,16 @@ void setup()
   lcd.clear();
   lcd.setCursor(0, 0);      // move cursor to   (0, 0)
   lcd.print("Connected");
+
+  //Sets the mqtt broker and the callback function
   client.setServer(mqtt_server, port);
   client.setCallback(callback);
+  // Publish a healtcheck status
   client.publish("board/healthcheck", "OK");
 
+  //Launches the tasks for FreeRTOS
+
+  //Mqtt loop and reconnect
   xTaskCreate(
     &mqtt_task,
     "mqtttask",
@@ -136,6 +151,7 @@ void setup()
     &mqttHandle
   );
 
+  //Button detection
    xTaskCreate(
     &button_detection,
     "buttondetection",
